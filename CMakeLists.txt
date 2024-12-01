@@ -1,47 +1,76 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.12)
 
-if(DEFINED ENV{GITHUB_RUN_NUMBER})
-  set(PATCH_NUM $ENV{GITHUB_RUN_NUMBER})
-else()
-  set(PATCH_NUM 0)
-endif()
+set(PATCH_VERSION "1" CACHE INTERNAL "Patch version")
+set(PROJECT_VERSION 0.0.${PATCH_VERSION})
 
-project(hello
-  LANGUAGES CXX
-  VERSION 0.0.${PATCH_NUM}
-)
+project(helloworld VERSION ${PROJECT_VERSION})
 
-set(CMAKE_BUILD_TYPE Debug)
-
-include(${PROJECT_SOURCE_DIR}/cmake/conan.cmake)
-conan_cmake_run(
-  CONANFILE conanfile.txt
-  BASIC_SETUP
-  CMAKE_TARGETS # individual targets to link to
-  BUILD
-    missing 
-)
+option(WITH_BOOST_TEST "Whether to build Boost test" ON)
 
 configure_file(version.h.in version.h)
-include_directories(${CMAKE_BINARY_DIR})
 
-option(BUILD_TESTS "Build unittests" OFF)
+add_executable(helloworld_cli main.cpp)
+add_library(helloworld lib.cpp)
 
-add_subdirectory(src)
+set_target_properties(helloworld_cli helloworld PROPERTIES
+    CXX_STANDARD 14
+    CXX_STANDARD_REQUIRED ON
+)
 
-if(BUILD_TESTS)
-    enable_testing()
-    add_subdirectory(tests)
+target_include_directories(helloworld PRIVATE "${CMAKE_BINARY_DIR}")
+
+target_link_libraries(helloworld_cli PRIVATE helloworld)
+
+if(WITH_BOOST_TEST)
+    find_package(Boost REQUIRED COMPONENTS unit_test_framework)
+    add_executable(test_version test_version.cpp)
+
+    set_target_properties(test_version PROPERTIES
+        CXX_STANDARD 14
+        CXX_STANDARD_REQUIRED ON
+    )
+
+    target_include_directories(test_version PRIVATE ${Boost_INCLUDE_DIR})
+    target_link_libraries(test_version PRIVATE helloworld Boost::unit_test_framework)
+
 endif()
 
-install(TARGETS sayhello RUNTIME DESTINATION bin)
+if (MSVC)
+    target_compile_options(helloworld_cli PRIVATE
+        /W4
+    )
+    target_compile_options(helloworld PRIVATE
+        /W4
+    )
+    if(WITH_BOOST_TEST)
+        target_compile_options(test_version PRIVATE
+            /W4
+        )
+    endif()
+else ()
+    target_compile_options(helloworld_cli PRIVATE
+        -Wall -Wextra -pedantic -Werror
+    )
+    target_compile_options(helloworld PRIVATE
+        -Wall -Wextra -pedantic -Werror
+    )
+    if(WITH_BOOST_TEST)
+        target_compile_options(test_version PRIVATE
+            -Wall -Wextra -pedantic -Werror
+        )
+    endif()
+endif()
+
+install(TARGETS helloworld_cli RUNTIME DESTINATION bin)
 
 set(CPACK_GENERATOR DEB)
 set(CPACK_PACKAGE_VERSION_MAJOR "${PROJECT_VERSION_MAJOR}")
 set(CPACK_PACKAGE_VERSION_MINOR "${PROJECT_VERSION_MINOR}")
 set(CPACK_PACKAGE_VERSION_PATCH "${PROJECT_VERSION_PATCH}")
-
 set(CPACK_PACKAGE_CONTACT example@example.com)
-
 include(CPack)
 
+if(WITH_BOOST_TEST)
+    enable_testing()
+    add_test(test_version test_version)
+endif()
